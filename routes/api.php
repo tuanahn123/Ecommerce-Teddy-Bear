@@ -1,0 +1,85 @@
+<?php
+
+use App\Http\Controllers\AttributeTypeController;
+use App\Http\Controllers\AttributeValueController;
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\AuthController;
+use App\Http\Controllers\CartController;
+use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\InvoiceController;
+use App\Http\Controllers\OrderController;
+use App\Http\Controllers\ProductController;
+use App\Http\Controllers\ReviewController;
+use App\Http\Controllers\UserController;
+
+//TODO Routes công khai
+Route::post('/auth/register', [AuthController::class, 'register']);
+Route::post('/auth/login', [AuthController::class, 'login']);
+Route::get('/products', [ProductController::class, 'index']);
+Route::get('/products/search', [ProductController::class, 'search']);
+Route::get('/products/{product}', [ProductController::class, 'show']);
+
+//TODO Routes cần xác thực
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/auth/me', [AuthController::class, 'me']);
+    Route::post('/auth/logout', [AuthController::class, 'logout']);
+    //TODO Routes cho customer
+    Route::post('/auth/change-password', [UserController::class, 'changePassword']);
+    Route::post('/user/profile', [UserController::class, 'updateProfile']);
+    //TODO Quản lý giỏ hàng
+    Route::get('/cart', [CartController::class, 'index']);
+    Route::post('/cart', [CartController::class, 'addToCart']);
+    Route::put('/cart/{cartItem}', [CartController::class, 'updateCart']);
+    Route::delete('/cart/{cartItem}', [CartController::class, 'removeFromCart']);
+    Route::delete('/cart', [CartController::class, 'clearCart']);
+    // TODO Đơn hàng
+    Route::post('/orders', [OrderController::class, 'createOrder']);
+    Route::post('/orders/{orderId}/cancel', [OrderController::class, 'cancelOrder']);
+    Route::get('/orders', [OrderController::class, 'getUserOrders']);
+    // TODO Hóa đơn
+    Route::post('/invoices/{orderId}', [InvoiceController::class, 'createInvoice']);
+    Route::get('/invoices/pay/{invoiceId}', [InvoiceController::class, 'payWithVnpay']);
+    Route::get('/vnpay-return', [InvoiceController::class, 'vnpayReturn']);
+    Route::get('/invoices/payment-status', [InvoiceController::class, 'getPaymentStatus']);
+    // TODO Bình luận
+    Route::get('/products/{product_id}/reviews', [ReviewController::class, 'getReviewsByProduct']);
+    Route::post('/reviews', [ReviewController::class, 'store']);
+    Route::put('/reviews/{id}', [ReviewController::class, 'update']);
+    Route::delete('/reviews/{id}', [ReviewController::class, 'destroy']);
+
+
+    //TODO Routes cho admin
+    Route::middleware('admin')->prefix('admin')->group(function () {
+        Route::get('/dashboard', function () {
+            return response()->json(['message' => 'Admin dashboard data']);
+        });
+        //TODO  Quản lý người dùng
+        Route::get('/users', [UserController::class, 'getListUser']);
+        //TODO  Attribute Type
+        Route::prefix('attribute-types')->group(function () {
+            Route::get('/', [AttributeTypeController::class, 'index']);
+            Route::post('/', [AttributeTypeController::class, 'store']);
+            Route::get('/{id}', [AttributeTypeController::class, 'show']);
+            Route::put('/{id}', [AttributeTypeController::class, 'update']);
+            Route::delete('/{id}', [AttributeTypeController::class, 'destroy']);
+        });
+
+        //TODO Attribute Values
+        Route::prefix('attribute-values')->group(function () {
+            Route::get('/', [AttributeValueController::class, 'index']);
+            Route::post('/', [AttributeValueController::class, 'store']);
+            Route::get('/{id}', [AttributeValueController::class, 'show']);
+            Route::put('/{id}', [AttributeValueController::class, 'update']);
+            Route::delete('/{id}', [AttributeValueController::class, 'destroy']);
+            Route::get('/by-type/{attributeTypeId}', [AttributeValueController::class, 'getByAttributeType']);
+        });
+        //TODO Danh mục
+        Route::apiResource('categories', CategoryController::class);
+        //TODO Sản phẩm
+        Route::post('/product', [ProductController::class, 'store']);
+        Route::post('/products/{product}', [ProductController::class, 'update']);
+        Route::delete('/products/{product}', [ProductController::class, 'destroy']);
+        // TODO Quản lý  đơn hàng
+        Route::get('/orders', [OrderController::class, 'getAllOrders']);
+    });
+});
