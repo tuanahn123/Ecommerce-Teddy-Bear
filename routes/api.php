@@ -18,6 +18,9 @@ Route::post('/auth/login', [AuthController::class, 'login']);
 Route::get('/products', [ProductController::class, 'index']);
 Route::get('/products/search', [ProductController::class, 'search']);
 Route::get('/products/{product}', [ProductController::class, 'show']);
+Route::get('/categories', [CategoryController::class, 'index']);
+Route::get('/categories/{id}', [CategoryController::class, 'show']);
+
 
 //TODO Routes cần xác thực
 Route::middleware('auth:sanctum')->group(function () {
@@ -74,7 +77,10 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/by-type/{attributeTypeId}', [AttributeValueController::class, 'getByAttributeType']);
         });
         //TODO Danh mục
-        Route::apiResource('categories', CategoryController::class);
+        // Route::apiResource('categories', CategoryController::class);
+        Route::post('/categories', [CategoryController::class, 'store']);
+        Route::delete('/categories/{id}', [CategoryController::class, 'destroy']);
+        Route::put('/categories/{id}', [CategoryController::class, 'update']);
         //TODO Sản phẩm
         Route::post('/product', [ProductController::class, 'store']);
         Route::post('/products/{product}', [ProductController::class, 'update']);
