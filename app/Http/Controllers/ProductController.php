@@ -60,20 +60,21 @@ class ProductController extends Controller
                 'featured' => 'nullable|boolean',
                 'status' => 'nullable|boolean',
                 //TODO Validate hình ảnh
-                'images' => 'nullable',
+                'images' => 'nullable|array',
                 'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048',
 
-                //TODO Validate biến thể
-                'variations' => 'nullable|array',
-                'variations.*.sku' => 'sometimes|string',
-                'variations.*.price' => 'nullable|numeric|min:0',
-                'variations.*.discount_price' => 'nullable|numeric|min:0',
-                'variations.*.stock_quantity' => 'nullable|integer|min:0',
+                //TODO Validate biến thể - cập nhật theo cấu trúc frontend
+                'variations' => 'required|array', // Biến thể là bắt buộc
+                'variations.*.sku' => 'required|string|distinct', // SKU là bắt buộc và phải khác nhau
+                'variations.*.price' => 'required|numeric|min:0', // Giá là bắt buộc
+                'variations.*.discount_price' => 'nullable|numeric|min:0|lt:variations.*.price', // Giá giảm phải nhỏ hơn giá gốc
+                'variations.*.stock_quantity' => 'required|integer|min:0', // Số lượng là bắt buộc
                 'variations.*.is_default' => 'nullable|boolean',
                 'variations.*.status' => 'nullable|boolean',
-                'variations.*.attributes' => 'nullable|array',
-                'variations.*.attributes.*.attribute_value_id' => 'sometimes|exists:attribute_values,id',
-                'variations.*.images' => 'nullable',
+                'variations.*.attributes' => 'required|array', // Thuộc tính là bắt buộc
+                'variations.*.attributes.*.attribute_type_id' => 'sometimes|exists:attribute_types,id',
+                'variations.*.attributes.*.attribute_value_id' => 'required|exists:attribute_values,id',
+                'variations.*.images' => 'nullable|array',
                 'variations.*.images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048',
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -112,14 +113,8 @@ class ProductController extends Controller
             ]);
 
             //TODO Thêm ảnh sản phẩm
-            if ($request->hasFile('images')) {
-                $images = $request->file('images');
-                //TODO Xử lý trường hợp images là một file duy nhất hoặc mảng files
-                if (!is_array($images)) {
-                    $images = [$images];
-                }
-
-                foreach ($images as $index => $image) {
+            if (isset($validated['images']) && count($validated['images']) > 0) {
+                foreach ($validated['images'] as $index => $image) {
                     $path = $image->store('product_images', 'public');
                     ProductImage::create([
                         'product_id' => $product->id,
@@ -130,18 +125,29 @@ class ProductController extends Controller
             }
 
             //TODO Thêm biến thể sản phẩm
-            if (!empty($request->variations)) {
-                foreach ($request->variations as $index => $variationData) {
-                    //TODO Tạo SKU nếu không có
-                    $sku = $variationData['sku'] ?? 'SKU-' . $product->id . '-' . ($index + 1);
+            if (!empty($validated['variations'])) {
+                $hasDefaultVariation = false;
+
+                foreach ($validated['variations'] as $index => $variationData) {
+                    // Kiểm tra SKU trùng lặp
+                    if (ProductVariation::where('sku', $variationData['sku'])->exists()) {
+                        throw new \Exception("SKU '{$variationData['sku']}' đã tồn tại trong hệ thống.");
+                    }
+
+                    $isDefault = filter_var($variationData['is_default'] ?? false, FILTER_VALIDATE_BOOLEAN);
+
+                    // Nếu đây là biến thể mặc định đầu tiên hoặc chưa có biến thể mặc định
+                    if ($isDefault) {
+                        $hasDefaultVariation = true;
+                    }
 
                     $variation = ProductVariation::create([
                         'product_id' => $product->id,
-                        'sku' => $sku,
-                        'price' => $variationData['price'] ?? null,
+                        'sku' => $variationData['sku'],
+                        'price' => $variationData['price'],
                         'discount_price' => $variationData['discount_price'] ?? null,
-                        'stock_quantity' => $variationData['stock_quantity'] ?? 0,
-                        'is_default' => filter_var($variationData['is_default'] ?? false, FILTER_VALIDATE_BOOLEAN),
+                        'stock_quantity' => $variationData['stock_quantity'],
+                        'is_default' => $isDefault,
                         'status' => filter_var($variationData['status'] ?? true, FILTER_VALIDATE_BOOLEAN),
                     ]);
 
@@ -150,20 +156,15 @@ class ProductController extends Controller
                         foreach ($variationData['attributes'] as $attribute) {
                             VariationAttribute::create([
                                 'product_variation_id' => $variation->id,
+                                'attribute_type_id' => $attribute['attribute_type_id'],
                                 'attribute_value_id' => $attribute['attribute_value_id'],
                             ]);
                         }
                     }
 
                     //TODO Thêm ảnh biến thể
-                    if (isset($variationData['images'])) {
-                        $varImages = $variationData['images'];
-                        //TODO Xử lý trường hợp images là một file duy nhất hoặc mảng files
-                        if (!is_array($varImages)) {
-                            $varImages = [$varImages];
-                        }
-
-                        foreach ($varImages as $imgIndex => $image) {
+                    if (isset($variationData['images']) && count($variationData['images']) > 0) {
+                        foreach ($variationData['images'] as $imgIndex => $image) {
                             if ($image instanceof \Illuminate\Http\UploadedFile) {
                                 $path = $image->store('variation_images', 'public');
                                 VariationImage::create([
@@ -173,6 +174,14 @@ class ProductController extends Controller
                                 ]);
                             }
                         }
+                    }
+                }
+
+                // Nếu không có biến thể mặc định, đặt biến thể đầu tiên làm mặc định
+                if (!$hasDefaultVariation && count($validated['variations']) > 0) {
+                    $firstVariation = ProductVariation::where('product_id', $product->id)->first();
+                    if ($firstVariation) {
+                        $firstVariation->update(['is_default' => true]);
                     }
                 }
             }

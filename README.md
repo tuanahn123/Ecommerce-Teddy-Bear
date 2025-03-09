@@ -7,7 +7,7 @@
 ### Cấu hình môi trường
 
 > cp .env.example .env  
-> php artisan key:generate  
+> php artisan key:generate
 
 ### Cấu hình cơ sở dữ liệu
 
@@ -16,14 +16,18 @@ Chỉnh sửa file `.env`:
 > DB_CONNECTION=mysql
 > DB_HOST=127.0.0.1
 > DB_PORT=3306
-> DB_DATABASE=ecommerce_teddy_bear 
+> DB_DATABASE=ecommerce_teddy_bear
 > DB_USERNAME=root
 > DB_PASSWORD=
 
 ### Chạy migration
 
-> php artisan migrate  
+> php artisan migrate
+
+### Chạy storage:link
+
+> php artisan storage:link
 
 ### Chạy server
 
-> php artisan serve  
+> php artisan serve

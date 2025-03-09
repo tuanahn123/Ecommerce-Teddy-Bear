@@ -20,7 +20,12 @@ Route::get('/products/search', [ProductController::class, 'search']);
 Route::get('/products/{product}', [ProductController::class, 'show']);
 Route::get('/categories', [CategoryController::class, 'index']);
 Route::get('/categories/{id}', [CategoryController::class, 'show']);
-
+Route::prefix('attribute-types')->group(function () {
+    Route::get('/', [AttributeTypeController::class, 'index']);
+    Route::get('/{id}', [AttributeTypeController::class, 'show']);
+});
+Route::get('/attribute-values', [AttributeValueController::class, 'index']);
+Route::get('attribute-values/{id}', [AttributeValueController::class, 'show']);
 
 //TODO Routes cần xác thực
 Route::middleware('auth:sanctum')->group(function () {
@@ -60,18 +65,18 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/users', [UserController::class, 'getListUser']);
         //TODO  Attribute Type
         Route::prefix('attribute-types')->group(function () {
-            Route::get('/', [AttributeTypeController::class, 'index']);
+            // Route::get('/', [AttributeTypeController::class, 'index']);
             Route::post('/', [AttributeTypeController::class, 'store']);
-            Route::get('/{id}', [AttributeTypeController::class, 'show']);
+            // Route::get('/{id}', [AttributeTypeController::class, 'show']);
             Route::put('/{id}', [AttributeTypeController::class, 'update']);
             Route::delete('/{id}', [AttributeTypeController::class, 'destroy']);
         });
 
         //TODO Attribute Values
         Route::prefix('attribute-values')->group(function () {
-            Route::get('/', [AttributeValueController::class, 'index']);
+            // Route::get('/', [AttributeValueController::class, 'index']);
             Route::post('/', [AttributeValueController::class, 'store']);
-            Route::get('/{id}', [AttributeValueController::class, 'show']);
+            // Route::get('/{id}', [AttributeValueController::class, 'show']);
             Route::put('/{id}', [AttributeValueController::class, 'update']);
             Route::delete('/{id}', [AttributeValueController::class, 'destroy']);
             Route::get('/by-type/{attributeTypeId}', [AttributeValueController::class, 'getByAttributeType']);
