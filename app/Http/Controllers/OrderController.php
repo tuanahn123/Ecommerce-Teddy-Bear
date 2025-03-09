@@ -138,7 +138,7 @@ class OrderController extends Controller
 
         //TODO Lấy danh sách đơn hàng của người dùng, sắp xếp theo thời gian mới nhất
         $orders = Order::where('user_id', $user->id)
-            ->with(['items.variation.product', 'items.variation.images'])
+            ->with(['items.variation.product', 'items.variation.images','items.variation.attributes','items.variation.attributes.attributeValue'])
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -147,7 +147,7 @@ class OrderController extends Controller
 
     public function getAllOrders()
     {
-        $orders = Order::with(['user', 'items.variation.product', 'items.variation.images'])
+        $orders = Order::with(['user', 'items.variation.product', 'items.variation.images','items.variation.attributes','items.variation.attributes.attributeValue'])
             ->orderBy('created_at', 'desc')
             ->get();
 
