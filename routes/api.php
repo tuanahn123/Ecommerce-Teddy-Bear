@@ -26,6 +26,7 @@ Route::prefix('attribute-types')->group(function () {
 });
 Route::get('/attribute-values', [AttributeValueController::class, 'index']);
 Route::get('attribute-values/{id}', [AttributeValueController::class, 'show']);
+Route::get('/vnpay-return', [InvoiceController::class, 'vnpayReturn']);
 
 //TODO Routes cần xác thực
 Route::middleware('auth:sanctum')->group(function () {
@@ -47,7 +48,6 @@ Route::middleware('auth:sanctum')->group(function () {
     // TODO Hóa đơn
     Route::post('/invoices/{orderId}', [InvoiceController::class, 'createInvoice']);
     Route::get('/invoices/pay/{invoiceId}', [InvoiceController::class, 'payWithVnpay']);
-    Route::get('/vnpay-return', [InvoiceController::class, 'vnpayReturn']);
     Route::get('/invoices/payment-status', [InvoiceController::class, 'getPaymentStatus']);
     // TODO Bình luận
     Route::get('/products/{product_id}/reviews', [ReviewController::class, 'getReviewsByProduct']);
