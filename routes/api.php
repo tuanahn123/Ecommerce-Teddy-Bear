@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ProductController;
@@ -58,9 +59,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     //TODO Routes cho admin
     Route::middleware('admin')->prefix('admin')->group(function () {
-        Route::get('/dashboard', function () {
-            return response()->json(['message' => 'Admin dashboard data']);
-        });
+        Route::get('/dashboard', [DashboardController::class, 'getStatistics']);
         //TODO  Quản lý người dùng
         Route::get('/users', [UserController::class, 'getListUser']);
         //TODO  Attribute Type
