@@ -27,6 +27,7 @@ Route::prefix('attribute-types')->group(function () {
 Route::get('/attribute-values', [AttributeValueController::class, 'index']);
 Route::get('attribute-values/{id}', [AttributeValueController::class, 'show']);
 Route::get('/vnpay-return', [InvoiceController::class, 'vnpayReturn']);
+Route::get('/products/{product_id}/reviews', [ReviewController::class, 'getReviewsByProduct']);
 
 //TODO Routes cần xác thực
 Route::middleware('auth:sanctum')->group(function () {
@@ -50,7 +51,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/invoices/pay/{invoiceId}', [InvoiceController::class, 'payWithVnpay']);
     Route::get('/invoices/payment-status', [InvoiceController::class, 'getPaymentStatus']);
     // TODO Bình luận
-    Route::get('/products/{product_id}/reviews', [ReviewController::class, 'getReviewsByProduct']);
     Route::post('/reviews', [ReviewController::class, 'store']);
     Route::put('/reviews/{id}', [ReviewController::class, 'update']);
     Route::delete('/reviews/{id}', [ReviewController::class, 'destroy']);
@@ -71,6 +71,15 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::put('/{id}', [AttributeTypeController::class, 'update']);
             Route::delete('/{id}', [AttributeTypeController::class, 'destroy']);
         });
+        // In the admin middleware group, add these routes:
+        // Existing admin routes
+
+        // Admin review management
+        Route::get('/reviews', [ReviewController::class, 'getAllReviews']);
+        Route::patch('/reviews/{id}/status', [ReviewController::class, 'updateReviewStatus']);
+        Route::post('/reviews/{review_id}/reply', [ReviewController::class, 'replyToReview']);
+        Route::put('/reviews/replies/{reply_id}', [ReviewController::class, 'updateReply']);
+        Route::delete('/reviews/replies/{reply_id}', [ReviewController::class, 'deleteReply']);
 
         //TODO Attribute Values
         Route::prefix('attribute-values')->group(function () {
