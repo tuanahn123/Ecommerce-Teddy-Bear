@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Auth;
 
 class InvoiceController extends Controller
 {
-    
+
     //TODO Tạo hóa đơn mới cho đơn hàng
     public function createInvoice($orderId)
     {
@@ -25,7 +25,10 @@ class InvoiceController extends Controller
 
         // TODO Kiểm tra nếu đơn hàng đã có hóa đơn
         if ($order->invoice) {
-            return response()->json(['message' => 'Hóa đơn đã tồn tại'], 400);
+            return response()->json([
+                'message' => 'Hóa đơn đã tồn tại',
+                'invoice' => $order->invoice
+            ], 200);
         }
 
         // TODO Tạo hóa đơn
@@ -145,6 +148,4 @@ class InvoiceController extends Controller
             'message' => $invoice->status === 'paid' ? 'Thanh toán thành công' : ($invoice->status === 'failed' ? 'Thanh toán thất bại' : 'Chưa thanh toán')
         ]);
     }
-
-
 }
