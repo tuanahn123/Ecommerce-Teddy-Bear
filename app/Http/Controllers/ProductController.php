@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductImage;
 use App\Models\ProductVariation;
@@ -32,6 +33,12 @@ class ProductController extends Controller
 
         if ($request->has('category_id')) {
             $query->where('category_id', $request->category_id);
+        }
+
+        if ($request->has('category_name')) {
+            $query->whereHas('categories', function ($q) use ($request) {
+                $q->where('name', 'LIKE', '%' . $request->category_name . '%');
+            });
         }
 
         if ($request->has('min_price')) {
@@ -215,40 +222,45 @@ class ProductController extends Controller
     public function update(Request $request, $id)
     {
         Log::info("Dữ liệu request cập nhật:", $request->all());
-        Log::info("Has file images?", ['has_file' => $request->hasFile('images')]);
 
+        // Find the product first
         $product = Product::find($id);
-
         if (!$product) {
             return response()->json(['message' => 'Không tìm thấy sản phẩm'], Response::HTTP_NOT_FOUND);
         }
 
+        // Validate the request - using less strict validation to allow for partial updates
         try {
             $validated = $request->validate([
-                'category_id' => 'exists:categories,id',
-                'name' => 'string|max:255',
-                'base_price' => 'numeric|min:0',
+                'name' => 'nullable|string|max:255',
+                'category_id' => 'nullable|exists:categories,id',
+                'base_price' => 'nullable|numeric|min:0',
                 'description' => 'nullable|string',
-                'featured' => 'boolean',
-                'status' => 'boolean',
+                'featured' => 'nullable|boolean',
+                'status' => 'nullable|boolean',
 
-                //TODO Validate hình ảnh
-                'images' => 'nullable',
-                'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048',
+                // Image validation
+                'existing_images' => 'nullable|array',
+                'existing_images.*' => 'string',
+                'delete_all_images' => 'nullable|boolean',
 
-                //TODO Validate biến thể
+                // Variation validation
                 'variations' => 'nullable|array',
-                'variations.*.id' => 'nullable|exists:product_variations,id',
-                'variations.*.sku' => 'sometimes|string',
+                'variations.*.id' => 'nullable|integer',
+                'variations.*.sku' => 'nullable|string',
                 'variations.*.price' => 'nullable|numeric|min:0',
                 'variations.*.discount_price' => 'nullable|numeric|min:0',
                 'variations.*.stock_quantity' => 'nullable|integer|min:0',
                 'variations.*.is_default' => 'nullable|boolean',
                 'variations.*.status' => 'nullable|boolean',
                 'variations.*.attributes' => 'nullable|array',
-                'variations.*.attributes.*.attribute_value_id' => 'sometimes|exists:attribute_values,id',
-                'variations.*.images' => 'nullable',
-                'variations.*.images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048',
+                'variations.*.existing_images' => 'nullable|array',
+                'variations.*.existing_images.*' => 'string',
+                'variations.*.delete_all_images' => 'nullable|boolean',
+
+                // Variations to delete
+                'delete_variations' => 'nullable|array',
+                'delete_variations.*' => 'integer',
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
             Log::error("Validation failed:", $e->errors());
@@ -257,103 +269,282 @@ class ProductController extends Controller
 
         DB::beginTransaction();
         try {
-            //TODO Cập nhật thông tin sản phẩm
-            $product->update([
-                'category_id' => $validated['category_id'] ?? $product->category_id,
-                'name' => $validated['name'] ?? $product->name,
-                'slug' => $validated['name'] ? Str::slug($validated['name']) : $product->slug,
-                'description' => $validated['description'] ?? $product->description,
-                'base_price' => $validated['base_price'] ?? $product->base_price,
-                'featured' => filter_var($validated['featured'] ?? $product->featured, FILTER_VALIDATE_BOOLEAN),
-                'status' => filter_var($validated['status'] ?? $product->status, FILTER_VALIDATE_BOOLEAN),
-            ]);
+            // 1. Update basic product information
+            if (
+                isset($validated['name']) || isset($validated['category_id']) ||
+                isset($validated['base_price']) || isset($validated['description']) ||
+                isset($validated['featured']) || isset($validated['status'])
+            ) {
 
-            //TODO Cập nhật ảnh sản phẩm nếu có
+                $updateData = [];
+
+                if (isset($validated['name'])) {
+                    $updateData['name'] = $validated['name'];
+
+                    // Update slug if name changes
+                    $slug = Str::slug($validated['name']);
+                    $originalSlug = $slug;
+                    $counter = 1;
+
+                    while (Product::where('slug', $slug)->where('id', '!=', $id)->exists()) {
+                        $slug = $originalSlug . '-' . $counter;
+                        $counter++;
+                    }
+
+                    $updateData['slug'] = $slug;
+                }
+
+                if (isset($validated['category_id'])) $updateData['category_id'] = $validated['category_id'];
+                if (isset($validated['base_price'])) $updateData['base_price'] = $validated['base_price'];
+                if (isset($validated['description'])) $updateData['description'] = $validated['description'];
+                if (isset($validated['featured'])) $updateData['featured'] = $validated['featured'];
+                if (isset($validated['status'])) $updateData['status'] = $validated['status'];
+
+                $product->update($updateData);
+            }
+
+            // 2. Handle product images
+            if (isset($validated['delete_all_images']) && $validated['delete_all_images']) {
+                // Delete all existing product images
+                ProductImage::where('product_id', $product->id)->delete();
+            }
+
+            // Handle uploaded images (using direct file access instead of validation)
             if ($request->hasFile('images')) {
                 $images = $request->file('images');
-                //TODO Xử lý trường hợp images là một file duy nhất hoặc mảng files
-                if (!is_array($images)) {
-                    $images = [$images];
-                }
+                $primaryImageExists = ProductImage::where('product_id', $product->id)
+                    ->where('is_primary', true)
+                    ->exists();
 
                 foreach ($images as $index => $image) {
                     $path = $image->store('product_images', 'public');
+
+                    // If no primary image exists, set the first new image as primary
+                    $isPrimary = (!$primaryImageExists && $index === 0);
+
                     ProductImage::create([
                         'product_id' => $product->id,
                         'image_path' => $path,
-                        'is_primary' => $index === 0, //TODO Ảnh đầu tiên là ảnh chính
+                        'is_primary' => $isPrimary
                     ]);
+
+                    if ($isPrimary) {
+                        $primaryImageExists = true;
+                    }
                 }
             }
 
-            //TODO Cập nhật biến thể sản phẩm nếu có
-            if (!empty($request->variations)) {
-                foreach ($request->variations as $variationData) {
+            // Handle existing images (if submitted)
+            if (isset($validated['existing_images']) && empty($validated['delete_all_images'])) {
+                // First, remove any images not in the list
+                $existingPaths = $validated['existing_images'];
+
+                ProductImage::where('product_id', $product->id)
+                    ->whereNotIn('image_path', $existingPaths)
+                    ->delete();
+
+                // Make sure at least one image is set as primary
+                $primaryExists = ProductImage::where('product_id', $product->id)
+                    ->where('is_primary', true)
+                    ->exists();
+
+                if (!$primaryExists && count($existingPaths) > 0) {
+                    $firstImage = ProductImage::where('product_id', $product->id)
+                        ->first();
+
+                    if ($firstImage) {
+                        $firstImage->update(['is_primary' => true]);
+                    }
+                }
+            }
+
+            // 3. Handle variations to delete
+            if (isset($validated['delete_variations']) && !empty($validated['delete_variations'])) {
+                ProductVariation::where('product_id', $product->id)
+                    ->whereIn('id', $validated['delete_variations'])
+                    ->delete();
+            }
+
+            // 4. Handle variations (update existing or create new)
+            if (isset($validated['variations']) && !empty($validated['variations'])) {
+                $defaultFound = false;
+
+                foreach ($validated['variations'] as $variationData) {
+                    // Check if it's an existing variation or a new one
                     if (!empty($variationData['id'])) {
-                        //TODO Tìm và cập nhật biến thể cũ
-                        $variation = ProductVariation::find($variationData['id']);
+                        // Update existing variation
+                        $variation = ProductVariation::where('id', $variationData['id'])
+                            ->where('product_id', $product->id)
+                            ->first();
+
                         if ($variation) {
-                            $variation->update([
-                                'sku' => $variationData['sku'] ?? $variation->sku,
-                                'price' => $variationData['price'] ?? $variation->price,
-                                'discount_price' => $variationData['discount_price'] ?? $variation->discount_price,
-                                'stock_quantity' => $variationData['stock_quantity'] ?? $variation->stock_quantity,
-                                'is_default' => filter_var($variationData['is_default'] ?? $variation->is_default, FILTER_VALIDATE_BOOLEAN),
-                                'status' => filter_var($variationData['status'] ?? $variation->status, FILTER_VALIDATE_BOOLEAN),
-                            ]);
+                            $updateData = [];
+
+                            if (isset($variationData['sku'])) $updateData['sku'] = $variationData['sku'];
+                            if (isset($variationData['price'])) $updateData['price'] = $variationData['price'];
+                            if (isset($variationData['discount_price'])) $updateData['discount_price'] = $variationData['discount_price'];
+                            if (isset($variationData['stock_quantity'])) $updateData['stock_quantity'] = $variationData['stock_quantity'];
+                            if (isset($variationData['status'])) $updateData['status'] = $variationData['status'];
+
+                            // Handle default status
+                            if (isset($variationData['is_default'])) {
+                                $updateData['is_default'] = $variationData['is_default'];
+
+                                if ($variationData['is_default']) {
+                                    $defaultFound = true;
+
+                                    // Remove default from other variations
+                                    ProductVariation::where('product_id', $product->id)
+                                        ->where('id', '!=', $variation->id)
+                                        ->update(['is_default' => false]);
+                                }
+                            }
+
+                            $variation->update($updateData);
+                        } else {
+                            throw new \Exception("Không tìm thấy biến thể ID: " . $variationData['id'] . " cho sản phẩm này");
                         }
-                    } else {
-                        //TODO Tạo biến thể mới
+                    } else if (isset($variationData['sku'])) {
+                        // Create new variation
+                        // Check if SKU exists
+                        if (ProductVariation::where('sku', $variationData['sku'])->exists()) {
+                            throw new \Exception("SKU '{$variationData['sku']}' đã tồn tại trong hệ thống.");
+                        }
+
+                        $isDefault = isset($variationData['is_default']) ? $variationData['is_default'] : false;
+
+                        if ($isDefault) {
+                            $defaultFound = true;
+
+                            // Set all other variations to non-default
+                            ProductVariation::where('product_id', $product->id)
+                                ->update(['is_default' => false]);
+                        }
+
                         $variation = ProductVariation::create([
                             'product_id' => $product->id,
-                            'sku' => $variationData['sku'] ?? 'SKU-' . $product->id . '-' . time(),
-                            'price' => $variationData['price'] ?? null,
+                            'sku' => $variationData['sku'],
+                            'price' => $variationData['price'] ?? $product->base_price,
                             'discount_price' => $variationData['discount_price'] ?? null,
                             'stock_quantity' => $variationData['stock_quantity'] ?? 0,
-                            'is_default' => filter_var($variationData['is_default'] ?? false, FILTER_VALIDATE_BOOLEAN),
-                            'status' => filter_var($variationData['status'] ?? true, FILTER_VALIDATE_BOOLEAN),
+                            'is_default' => $isDefault,
+                            'status' => $variationData['status'] ?? true
                         ]);
+                    } else {
+                        // Skip invalid variation data
+                        continue;
                     }
 
-                    //TODO Cập nhật thuộc tính biến thể nếu có
-                    if (!empty($variationData['attributes'])) {
+                    // Handle variation attributes (if present)
+                    if (isset($variationData['attributes']) && !empty($variationData['attributes'])) {
+                        // Remove existing attributes
                         VariationAttribute::where('product_variation_id', $variation->id)->delete();
+
+                        // Add new attributes
                         foreach ($variationData['attributes'] as $attribute) {
-                            VariationAttribute::create([
-                                'product_variation_id' => $variation->id,
-                                'attribute_value_id' => $attribute['attribute_value_id'],
-                            ]);
-                        }
-                    }
-
-                    //TODO Cập nhật ảnh biến thể nếu có
-                    if (isset($variationData['images'])) {
-                        $varImages = $variationData['images'];
-                        //TODO Xử lý trường hợp images là một file duy nhất hoặc mảng files
-                        if (!is_array($varImages)) {
-                            $varImages = [$varImages];
-                        }
-
-                        foreach ($varImages as $imgIndex => $image) {
-                            if ($image instanceof \Illuminate\Http\UploadedFile) {
-                                $path = $image->store('variation_images', 'public');
-                                VariationImage::create([
+                            if (isset($attribute['attribute_value_id'])) {
+                                VariationAttribute::create([
                                     'product_variation_id' => $variation->id,
-                                    'image_path' => $path,
-                                    'is_primary' => $imgIndex === 0, //TODO Ảnh đầu tiên là ảnh chính
+                                    'attribute_type_id' => $attribute['attribute_type_id'] ?? null,
+                                    'attribute_value_id' => $attribute['attribute_value_id']
                                 ]);
                             }
                         }
+                    }
+
+                    // Handle variation images
+                    if (isset($variationData['delete_all_images']) && $variationData['delete_all_images']) {
+                        // Delete all existing variation images
+                        VariationImage::where('product_variation_id', $variation->id)->delete();
+                    }
+
+                    // Check for uploaded variation images (using request directly)
+                    $variationIndex = array_search($variationData, $validated['variations']);
+                    $imageKey = 'variations.' . $variationIndex . '.images';
+
+                    if ($request->hasFile($imageKey)) {
+                        $images = $request->file($imageKey);
+                        $primaryExists = VariationImage::where('product_variation_id', $variation->id)
+                            ->where('is_primary', true)
+                            ->exists();
+
+                        foreach ($images as $index => $image) {
+                            $path = $image->store('variation_images', 'public');
+                            $isPrimary = (!$primaryExists && $index === 0);
+
+                            VariationImage::create([
+                                'product_variation_id' => $variation->id,
+                                'image_path' => $path,
+                                'is_primary' => $isPrimary
+                            ]);
+
+                            if ($isPrimary) {
+                                $primaryExists = true;
+                            }
+                        }
+                    }
+
+                    // Handle existing variation images
+                    if (isset($variationData['existing_images']) && !isset($variationData['delete_all_images'])) {
+                        // Remove images not in the list
+                        $existingPaths = $variationData['existing_images'];
+
+                        VariationImage::where('product_variation_id', $variation->id)
+                            ->whereNotIn('image_path', $existingPaths)
+                            ->delete();
+
+                        // Ensure one image is primary
+                        $primaryExists = VariationImage::where('product_variation_id', $variation->id)
+                            ->where('is_primary', true)
+                            ->exists();
+
+                        if (!$primaryExists && count($existingPaths) > 0) {
+                            $firstImage = VariationImage::where('product_variation_id', $variation->id)
+                                ->first();
+
+                            if ($firstImage) {
+                                $firstImage->update(['is_primary' => true]);
+                            }
+                        }
+                    }
+                }
+
+                // Ensure at least one variation is marked as default
+                if (!$defaultFound) {
+                    $firstVariation = ProductVariation::where('product_id', $product->id)->first();
+
+                    if ($firstVariation) {
+                        $firstVariation->update(['is_default' => true]);
                     }
                 }
             }
 
             DB::commit();
-            return response()->json(['message' => 'Sản phẩm đã được cập nhật thành công.', 'product' => $product], 200);
+
+            // Return the updated product with relationships
+            $updatedProduct = Product::with([
+                'categories',
+                'images',
+                'variations.attributes.attributeValue.attributeType',
+                'variations.attributes',
+                'variations.images'
+            ])->find($id);
+
+            return response()->json([
+                'message' => 'Sản phẩm đã được cập nhật thành công.',
+                'product' => $updatedProduct
+            ], 200);
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error("Lỗi khi cập nhật sản phẩm:", ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
-            return response()->json(['error' => $e->getMessage()], 500);
+            Log::error("Lỗi khi cập nhật sản phẩm:", [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'error' => $e->getMessage(),
+                'message' => 'Đã xảy ra lỗi khi cập nhật sản phẩm.'
+            ], 500);
         }
     }
 
@@ -370,5 +561,40 @@ class ProductController extends Controller
         $product->delete();
 
         return response()->json(['message' => 'Xóa sản phẩm thành công'], Response::HTTP_OK);
+    }
+    public function getProductsByCategoryId($categoryId)
+    {
+        // Tìm danh mục theo ID
+        $category = Category::find($categoryId);
+
+        if (!$category) {
+            return response()->json(['error' => 'Danh mục không tồn tại.'], 404);
+        }
+
+        // Lấy tất cả sản phẩm thuộc danh mục này với tất cả các trường
+        $products = Product::with([
+            'images',
+            'variations.attributes.attributeValue.attributeType',
+            'variations.attributes',
+            'variations.images',
+            'categories' // Include the categories relationship if needed
+        ])->where('category_id', $category->id)->get();
+
+        return response()->json($products);
+    }
+
+    public function getProductsByCategorySlug($slug)
+    {
+        // Tìm danh mục theo slug
+        $category = Category::where('slug', $slug)->first();
+
+        if (!$category) {
+            return response()->json(['error' => 'Danh mục không tồn tại.'], 404);
+        }
+
+        // Lấy tất cả sản phẩm thuộc danh mục này
+        $products = Product::where('category_id', $category->id)->with(['images', 'variations.attributes.attributeValue.attributeType'])->get();
+
+        return response()->json($products);
     }
 }

@@ -86,7 +86,7 @@ class UserController extends Controller
     }
     public function getListUser()
     {
-        $users = User::where('role','customer')->get();
+        $users = User::where('role', 'customer')->get();
         return response()->json($users, Response::HTTP_OK);
     }
 }

@@ -13,9 +13,20 @@ class AttributeTypeController extends Controller
     /**
      * Hiển thị danh sách attribute types
      */
-    public function index()
+    public function index(Request $request)
     {
-        $attributeTypes = AttributeType::with('attributeValues')->get();
+        $query = AttributeType::with('attributeValues');
+
+        // Xử lý tìm kiếm nếu có
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('name', 'LIKE', "%{$searchTerm}%")
+                    ->orWhere('display_name', 'LIKE', "%{$searchTerm}%");
+            });
+        }
+
+        $attributeTypes = $query->get();
 
         return response()->json([
             'data' => $attributeTypes

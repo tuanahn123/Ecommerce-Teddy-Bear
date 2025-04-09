@@ -23,12 +23,22 @@ class AttributeValueController extends Controller
             $query->where('attribute_type_id', $request->attribute_type_id);
         }
 
+        // Tìm kiếm theo từ khóa (value hoặc display_value)
+        if ($request->has('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('value', 'like', "%$search%")
+                    ->orWhere('display_value', 'like', "%$search%");
+            });
+        }
+
         $attributeValues = $query->get();
 
         return response()->json([
             'data' => $attributeValues
         ]);
     }
+
 
     /**
      * Hiển thị chi tiết attribute value

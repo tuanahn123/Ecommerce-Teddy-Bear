@@ -138,7 +138,7 @@ class OrderController extends Controller
 
         //TODO Lấy danh sách đơn hàng của người dùng, sắp xếp theo thời gian mới nhất
         $orders = Order::where('user_id', $user->id)
-            ->with(['items.variation.product', 'items.variation.images','items.variation.attributes','items.variation.attributes.attributeValue'])
+            ->with(['items.variation.product', 'items.variation.images', 'items.variation.attributes', 'items.variation.attributes.attributeValue'])
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -147,10 +147,223 @@ class OrderController extends Controller
 
     public function getAllOrders()
     {
-        $orders = Order::with(['user', 'items.variation.product', 'items.variation.images','items.variation.attributes','items.variation.attributes.attributeValue'])
+        $orders = Order::with(['user', 'items.variation.product', 'items.variation.images', 'items.variation.attributes', 'items.variation.attributes.attributeValue'])
             ->orderBy('created_at', 'desc')
             ->get();
 
         return response()->json(['orders' => $orders]);
+    }
+
+    // Mới thêm: Chức năng tìm kiếm đơn hàng
+    public function searchOrders(Request $request)
+    {
+        // Validate search parameters
+        $request->validate([
+            'keyword' => 'nullable|string|max:255',
+            'status' => 'nullable|string|in:pending,processing,shipped,delivered,cancelled',
+            'date_from' => 'nullable|date',
+            'date_to' => 'nullable|date|after_or_equal:date_from',
+            'order_number' => 'nullable|string',
+        ]);
+
+        // Base query
+        $query = Order::query()->with(['user', 'items.variation.product']);
+
+        // Apply filters based on search parameters
+        if ($request->filled('keyword')) {
+            $keyword = $request->keyword;
+            $query->where(function ($q) use ($keyword) {
+                $q->where('shipping_name', 'like', "%{$keyword}%")
+                    ->orWhere('shipping_phone', 'like', "%{$keyword}%")
+                    ->orWhere('shipping_address', 'like', "%{$keyword}%")
+                    ->orWhereHas('user', function ($userQuery) use ($keyword) {
+                        $userQuery->where('name', 'like', "%{$keyword}%")
+                            ->orWhere('email', 'like', "%{$keyword}%");
+                    });
+            });
+        }
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->filled('date_from')) {
+            $query->whereDate('created_at', '>=', $request->date_from);
+        }
+
+        if ($request->filled('date_to')) {
+            $query->whereDate('created_at', '<=', $request->date_to);
+        }
+
+        if ($request->filled('order_number')) {
+            $query->where('order_number', 'like', "%{$request->order_number}%");
+        }
+
+        // Get paginated results
+        $orders = $query->orderBy('created_at', 'desc')->paginate(10);
+
+        return response()->json(['orders' => $orders]);
+    }
+
+    // Mới thêm: Chức năng xóa đơn hàng (chỉ admin)
+    public function deleteOrder($orderId)
+    {
+        // Tìm đơn hàng theo ID
+        $order = Order::findOrFail($orderId);
+
+        DB::beginTransaction();
+        try {
+            // Nếu đơn hàng chưa giao, hoàn lại tồn kho
+            if (!in_array($order->status, ['delivered'])) {
+                foreach ($order->items as $item) {
+                    $productVariation = $item->variation;
+                    $productVariation->increment('stock_quantity', $item->quantity);
+                }
+            }
+
+            // Xóa các chi tiết đơn hàng
+            OrderItem::where('order_id', $orderId)->delete();
+
+            // Xóa đơn hàng
+            $order->delete();
+
+            DB::commit();
+            return response()->json(['message' => 'Đơn hàng đã được xóa thành công']);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Lỗi khi xóa đơn hàng', 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    // Mới thêm: Chức năng sửa thông tin đơn hàng (chỉ admin)
+    public function updateOrder(Request $request, $orderId)
+    {
+        // Validate dữ liệu đầu vào
+        $request->validate([
+            'shipping_address' => 'nullable|string|max:255',
+            'shipping_phone' => 'nullable|string|max:20',
+            'shipping_name' => 'nullable|string|max:255',
+            'payment_method' => 'nullable|string',
+            'payment_status' => 'nullable|string|in:pending,paid,refunded',
+            'notes' => 'nullable|string',
+        ]);
+
+        // Tìm đơn hàng theo ID
+        $order = Order::findOrFail($orderId);
+
+        try {
+            // Cập nhật thông tin đơn hàng
+            $updateData = array_filter($request->only([
+                'shipping_address',
+                'shipping_phone',
+                'shipping_name',
+                'payment_method',
+                'payment_status',
+                'notes'
+            ]));
+
+            $order->update($updateData);
+
+            return response()->json([
+                'message' => 'Cập nhật đơn hàng thành công',
+                'order' => $order->fresh()
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Lỗi khi cập nhật đơn hàng', 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    // Mới thêm: Chức năng chuyển trạng thái đơn hàng (chỉ admin)
+    public function updateOrderStatus(Request $request, $orderId)
+    {
+        // Validate dữ liệu đầu vào
+        $request->validate([
+            'status' => 'required|string|in:pending,processing,shipped,delivered,cancelled',
+            'notes' => 'nullable|string',
+        ]);
+
+        // Tìm đơn hàng theo ID
+        $order = Order::findOrFail($orderId);
+
+        // Kiểm tra trạng thái hợp lệ theo quy trình
+        $validTransitions = [
+            'pending' => ['processing', 'cancelled'],
+            'processing' => ['shipped', 'cancelled'],
+            'shipped' => ['delivered', 'cancelled'],
+            'delivered' => [],
+            'cancelled' => []
+        ];
+
+        if (!in_array($request->status, $validTransitions[$order->status])) {
+            return response()->json([
+                'message' => 'Không thể chuyển trạng thái từ ' .
+                    $this->translateStatus($order->status) .
+                    ' sang ' . $this->translateStatus($request->status)
+            ], 400);
+        }
+
+        DB::beginTransaction();
+        try {
+            // Cập nhật trạng thái đơn hàng
+            $updateData = [
+                'status' => $request->status
+            ];
+
+            if ($request->filled('notes')) {
+                $updateData['notes'] = $request->notes;
+            }
+
+            // Nếu đơn hàng hủy và đã thanh toán, cập nhật trạng thái thanh toán thành hoàn tiền
+            if ($request->status === 'cancelled' && $order->payment_status === 'paid') {
+                $updateData['payment_status'] = 'refunded';
+            }
+
+            // Nếu hủy đơn hàng, hoàn lại tồn kho
+            if ($request->status === 'cancelled' && $order->status !== 'cancelled') {
+                foreach ($order->items as $item) {
+                    $productVariation = $item->variation;
+                    $productVariation->increment('stock_quantity', $item->quantity);
+                }
+            }
+
+            $order->update($updateData);
+
+            DB::commit();
+            return response()->json([
+                'message' => 'Cập nhật trạng thái đơn hàng thành công',
+                'order' => $order->fresh()
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Lỗi khi cập nhật trạng thái đơn hàng', 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    // Mới thêm: Hàm dịch trạng thái sang tiếng Việt để hiển thị thông báo
+    private function translateStatus($status)
+    {
+        $translations = [
+            'pending' => 'Đang chờ xác nhận',
+            'processing' => 'Đang chờ vận chuyển',
+            'shipped' => 'Đã vận chuyển',
+            'delivered' => 'Đã giao thành công',
+            'cancelled' => 'Đã hủy'
+        ];
+
+        return $translations[$status] ?? $status;
+    }
+
+    // Mới thêm: Xem chi tiết đơn hàng
+    public function getOrderDetail($orderId)
+    {
+        $order = Order::with([
+            'user',
+            'items.variation.product',
+            'items.variation.images',
+            'items.variation.attributes',
+            'items.variation.attributes.attributeValue'
+        ])->findOrFail($orderId);
+
+        return response()->json(['order' => $order]);
     }
 }

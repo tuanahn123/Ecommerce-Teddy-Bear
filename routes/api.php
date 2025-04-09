@@ -29,8 +29,8 @@ Route::get('/attribute-values', [AttributeValueController::class, 'index']);
 Route::get('attribute-values/{id}', [AttributeValueController::class, 'show']);
 Route::get('/vnpay-return', [InvoiceController::class, 'vnpayReturn']);
 Route::get('/products/{product_id}/reviews', [ReviewController::class, 'getReviewsByProduct']);
-
-//TODO Routes cần xác thực
+Route::get('/products/category/{id}', [ProductController::class, 'getProductsByCategoryId']);
+Route::get('/products/category/slug/{slug}', [ProductController::class, 'getProductsByCategorySlug']); //TODO Routes cần xác thực
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/auth/me', [AuthController::class, 'me']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
@@ -100,5 +100,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/products/{product}', [ProductController::class, 'destroy']);
         // TODO Quản lý  đơn hàng
         Route::get('/orders', [OrderController::class, 'getAllOrders']);
+        // In routes/api.php (or wherever your existing routes are defined)
+        // Inside the admin middleware group
+
+        // Admin Order Management
+        Route::get('/orders/search', [OrderController::class, 'searchOrders']);
+        Route::delete('/orders/{orderId}', [OrderController::class, 'deleteOrder']);
+        Route::put('/orders/{orderId}', [OrderController::class, 'updateOrder']);
+        Route::patch('/orders/{orderId}/status', [OrderController::class, 'updateOrderStatus']);
+        Route::get('/orders/{orderId}', [OrderController::class, 'getOrderDetail']);
     });
 });

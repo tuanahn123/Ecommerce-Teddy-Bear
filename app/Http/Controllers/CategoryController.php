@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Category;
+use App\Models\Product;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -12,10 +13,17 @@ class CategoryController extends Controller
     /**
      * Lấy danh sách tất cả danh mục
      */
-    public function index()
+    public function index(Request $request)
     {
-        return response()->json(Category::all());
+        $search = $request->query('search');
+
+        $categories = Category::when($search, function ($query, $search) {
+            return $query->where('name', 'like', '%' . $search . '%');
+        })->get();
+
+        return response()->json($categories);
     }
+
 
     /**
      * Tạo mới danh mục
