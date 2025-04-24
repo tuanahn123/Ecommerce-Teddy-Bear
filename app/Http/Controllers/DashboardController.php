@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\ProductVariation;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Carbon\Carbon;
 
 class DashboardController extends Controller
 {
@@ -16,7 +17,18 @@ class DashboardController extends Controller
         $totalOrders = Order::count();
         $completedOrders = Order::where('status', 'completed')->count();
         $canceledOrders = Order::where('status', 'canceled')->count();
-        $totalRevenue = Order::where('status', 'completed')->sum('total_amount');
+
+        // ✅ Doanh thu tổng, theo tháng, tuần => DỰA TRÊN HÓA ĐƠN ĐÃ THANH TOÁN
+        $totalRevenue = Invoice::where('status', 'paid')->sum('amount');
+
+        $monthlyRevenue = Invoice::where('status', 'paid')
+            ->whereMonth('payment_date', Carbon::now()->month)
+            ->whereYear('payment_date', Carbon::now()->year)
+            ->sum('amount');
+
+        $weeklyRevenue = Invoice::where('status', 'paid')
+            ->whereBetween('payment_date', [Carbon::now()->startOfWeek(), Carbon::now()->endOfWeek()])
+            ->sum('amount');
 
         $totalInvoices = Invoice::count();
         $totalPaidInvoices = Invoice::where('status', 'paid')->sum('amount');
@@ -37,7 +49,11 @@ class DashboardController extends Controller
                 'total' => $totalOrders,
                 'completed' => $completedOrders,
                 'canceled' => $canceledOrders,
-                'total_revenue' => $totalRevenue,
+            ],
+            'revenue' => [
+                'total' => $totalRevenue,
+                'monthly' => $monthlyRevenue,
+                'weekly' => $weeklyRevenue,
             ],
             'invoices' => [
                 'total' => $totalInvoices,

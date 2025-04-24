@@ -62,6 +62,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/dashboard', [DashboardController::class, 'getStatistics']);
         //TODO  Quản lý người dùng
         Route::get('/users', [UserController::class, 'getListUser']);
+        Route::post('/users', [UserController::class, 'store']); // Thêm
+        Route::put('/users/{id}', [UserController::class, 'update']); // Sửa
+        Route::delete('/users/{id}', [UserController::class, 'destroy']); // Xóa
+        Route::get('/users/search', [UserController::class, 'searchUser']); // Tìm kiếm
+
         //TODO  Attribute Type
         Route::prefix('attribute-types')->group(function () {
             // Route::get('/', [AttributeTypeController::class, 'index']);

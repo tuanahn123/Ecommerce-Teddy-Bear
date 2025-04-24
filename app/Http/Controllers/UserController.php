@@ -13,9 +13,75 @@ use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
 {
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email',
+            'password' => 'required|string|min:6',
+            'phone' => 'nullable|string|max:20',
+            'address' => 'nullable|string|max:255',
+        ]);
+
+        $user = User::create([
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'password' => Hash::make($validated['password']),
+            'phone' => $validated['phone'] ?? null,
+            'address' => $validated['address'] ?? null,
+            'role' => 'customer',
+        ]);
+
+        return response()->json([
+            'message' => 'Thêm người dùng thành công.',
+            'user' => $user
+        ], Response::HTTP_CREATED);
+    }
+
+    public function update(Request $request, $id)
+    {
+        $user = User::findOrFail($id);
+
+        $request->validate([
+            'name' => 'nullable|string|max:255',
+            'email' => 'nullable|email|unique:users,email,' . $user->id,
+            'phone' => 'nullable|string|max:20',
+            'address' => 'nullable|string|max:255',
+        ]);
+
+        $user->update($request->only(['name', 'email', 'phone', 'address']));
+
+        return response()->json([
+            'message' => 'Cập nhật người dùng thành công.',
+            'user' => $user
+        ]);
+    }
+    public function searchUser(Request $request)
+    {
+        $query = $request->input('q');
+        $users = User::where('name', 'like', "%$query%")
+            ->orWhere('email', 'like', "%$query%")
+            ->orWhere('phone', 'like', "%$query%")
+            ->get();
+
+        return response()->json($users);
+    }
+
+
+    public function destroy($id)
+    {
+        $user = User::findOrFail($id);
+        $user->delete();
+
+        return response()->json([
+            'message' => 'Xóa người dùng thành công.'
+        ]);
+    }
+
     /**
      * Cập nhật thông tin người dùng.
      */
+
     public function updateProfile(Request $request)
     {
         $user = Auth::user();
