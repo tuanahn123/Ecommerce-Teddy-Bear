@@ -39,10 +39,10 @@ class OrderController extends Controller
         DB::beginTransaction();
         try {
             //TODO Tính tổng tiền đơn hàng
-            $totalAmount = number_format($cartItems->sum(function ($item) {
-                return $item->productVariation['price'] * $item['quantity'];
-            }), 0, '.', '');
-
+            $totalAmount = $cartItems->sum(function ($item) {
+                $price = $item->productVariation['discount_price'] ?? $item->productVariation['price'];
+                return $price * $item['quantity'];
+            });
 
             //TODO Tạo đơn hàng mới
             $order = Order::create([
