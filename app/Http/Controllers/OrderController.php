@@ -44,6 +44,10 @@ class OrderController extends Controller
                 return $price * $item['quantity'];
             });
 
+            // Thêm phí vận chuyển
+            $shippingFee = 35000;
+            $totalAmount += $shippingFee;
+
             //TODO Tạo đơn hàng mới
             $order = Order::create([
                 'user_id' => $user->id,
@@ -56,6 +60,7 @@ class OrderController extends Controller
                 'payment_status' => 'pending',
                 'status' => 'pending',
                 'notes' => $request->notes,
+                'shipping_fee' => $shippingFee,
             ]);
 
             //TODO Thêm các sản phẩm đã chọn vào đơn hàng
