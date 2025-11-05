@@ -121,7 +121,7 @@ class InvoiceController extends Controller
             return redirect()->to("$clientUrl/check-payment-status?invoice_number=" . $invoice->invoice_number);
         } else {
             // TODO Cập nhật trạng thái thất bại
-            $invoice->update(['status' => 'failed']);
+            $invoice->update(['status' => 'cancelled']);
 
             $order = Order::where('id', $invoice->order_id)->first();
             if ($order) {
